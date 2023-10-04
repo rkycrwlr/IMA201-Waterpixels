@@ -11,3 +11,4 @@
 * ~~Apply watershed algorithm~~
 * ~~Use hexagonal cells instead of square ones~~
 * Compute efficiency of the technique
+* Rgb to Lab in order to compute the grad with L component
