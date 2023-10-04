@@ -118,7 +118,7 @@ def compute_cells(img, radius=CELL_RADIUS, rho=RHO):
 def get_glob_marker_center(cells):
     glob_marker_center = np.zeros(cells[0].img.shape)
     for i,cell in enumerate(cells):
-        glob_marker_center[cell.get_center()] = i+1
+        glob_marker_center[cell.get_center()] = 1
     return glob_marker_center
 
 def get_glob_marker_distinct(cells):
@@ -209,18 +209,20 @@ plt.show()
 def waterpixel(img, cell_rad, k, rho, marker_center=False):
     g_img = morphological_grad(img)
     cells = compute_cells(g_img, radius=cell_rad, rho=rho)
+    glob_marker_distinct = get_glob_marker_distinct(cells)
 
     if marker_center:
-        glob_marker = get_glob_marker_center(cells)
-        dist_map = DL_distance_map(glob_marker)
+        glob_marker_center = get_glob_marker_center(cells)
+        dist_map = DL_distance_map(glob_marker_center)
     else:
-        glob_marker = get_glob_marker_distinct(cells)
-        dist_map = DL_distance_map(glob_marker)
-        
+        dist_map = DL_distance_map(glob_marker_distinct)
+
+    reg_g_img = compute_reg_grad(g_img*255, dist_map, k, cell_dist=CELL_RADIUS)
+
     plt.imshow(reg_g_img)
     plt.show()
 
-    labels = skimage.segmentation.watershed(reg_g_img, glob_marker, watershed_line=True)
+    labels = skimage.segmentation.watershed(reg_g_img, glob_marker_distinct, watershed_line=True)
     waterpix_img = compute_segmentation(img,labels)
     return waterpix_img
 
