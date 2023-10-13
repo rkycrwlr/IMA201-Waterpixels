@@ -191,7 +191,9 @@ plt.show()
 #%%
 
 labels = skimage.segmentation.watershed(reg_g_img, glob_marker_distinct, watershed_line=True)
-
+plt.imshow(labels)
+plt.show()
+#%%
 
 def compute_segmentation(img, labels):
     waterpix_mask = (labels == 0) * 255
@@ -200,11 +202,17 @@ def compute_segmentation(img, labels):
     waterpix_mask = skimage.morphology.dilation(waterpix_mask)
     return np.where(waterpix_mask, waterpix_mask, img)
 
+def compute_segmentation1D( labels):
+    waterpix_mask = (labels == 0) * 255 
+    waterpix_mask = waterpix_mask.astype(np.uint8)
+    return waterpix_mask
 
 img_gray = cv2.cvtColor(np_img, cv2.COLOR_BGR2GRAY)
 plt.imshow(compute_segmentation(img_gray, labels), cmap='gray')
 plt.show()
-
+waterpix_mask = compute_segmentation1D(labels)
+plt.imshow(waterpix_mask)
+plt.show()
 #%%
 def waterpixel(img, cell_rad, k, rho, marker_center=False):
     g_img = morphological_grad(img)
@@ -229,4 +237,45 @@ def waterpixel(img, cell_rad, k, rho, marker_center=False):
 # img_gray = cv2.cvtColor(np_img, cv2.COLOR_BGR2GRAY)
 w_img = waterpixel(np_img, 20, 25, 2/3)
 plt.imshow(w_img)
+plt.show()
+# %%
+
+def contourDensity(waterpix):
+    w,h=waterpix.shape()
+    sb = 2*(w+h)-4
+    sc = waterpix.sum()
+    d = w*h
+    return (sc+sb)/d
+
+#%%
+def barycenters(labels):
+    indiceMax = labels.max()
+    barys = []
+    for idx in range(1,indiceMax+1):
+        coordsx,coordsy = np.where(labels==idx)
+        baryX = coordsx.sum() / len(coordsx)
+        baryY = coordsy.sum() / len(coordsy)
+        barys.append((int(baryX.round()),int((baryY.round()))))
+    return barys
+
+
+def average_superpix(labels, barys):
+    w,h = labels.shape
+    avg = np.zeros((w,h))
+    indiceMax = labels.max()
+    
+    for idx in range(1,indiceMax+1):
+        x,y = np.where(labels==idx)
+        coordsX = x - barys[idx-1][0] + w//2
+        coordsY = y - barys[idx-1][1] + h//2
+        for i in range(len(x)):
+            avg[coordsX[i],coordsY[i]] += 1
+    avg = avg/indiceMax
+    # avg = avg>=0.5
+
+    return avg
+
+barys = barycenters(labels)
+avg = average_superpix(labels,barys)
+plt.imshow(avg)
 plt.show()
