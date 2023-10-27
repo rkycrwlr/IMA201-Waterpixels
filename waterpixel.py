@@ -271,7 +271,7 @@ def average_superpix(labels, barys):
         for i in range(len(x)):
             avg[coordsX[i],coordsY[i]] += 1
     avg = avg/indiceMax
-    # avg = avg>=0.5
+    avg = avg>=0.5
 
     return avg
 
@@ -279,3 +279,41 @@ barys = barycenters(labels)
 avg = average_superpix(labels,barys)
 plt.imshow(avg)
 plt.show()
+
+# %%
+def centered_label(i, barys, labels):
+    result = np.zeros(labels.shape)
+    x,y = np.where(labels==i)
+    for j in range(len(x)):
+        result[x[j]-barys[i-1][0]+labels.shape[0]//2,y[j]-barys[i-1][1]+labels.shape[1]//2] = 1
+    return result
+
+
+
+def mf(img1, img2):
+    inter = np.logical_and(img1, img2).sum()
+    union = np.logical_or(img1, img2).sum()
+    return 1 - inter / union
+
+#vérification de la fonction mf
+result = mf(centered_label(1, barys, labels), centered_label(1, barys, labels))
+print(result)
+
+# %%
+
+def MF(labels):
+    N = labels.max()
+    S = 0
+    for i in range(N):
+        S += mf(centered_label(i,barys,labels), avg)
+    return S/N
+
+
+result = MF(labels)
+print(result)
+
+
+
+
+
+# %%
