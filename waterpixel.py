@@ -1,5 +1,6 @@
 #%%
 import numpy as np
+import scipy
 from scipy import ndimage
 import skimage
 import matplotlib.pyplot as plt
@@ -11,9 +12,9 @@ import math
 
 #%%
 
-img_path = 'BSDS300/images/train/176035.jpg'
+img_path = 'BSR/BSDS500/data/images/train/176035.jpg'
 im = Image.open(img_path)
-im = im.resize((400,300))
+# im = im.resize((400,300))
 np_img = np.array(im)
 CELL_RADIUS = 20
 RHO=2/3
@@ -74,7 +75,7 @@ class Cell():
         return values, msk
     
     def get_marker(self):
-        marker = np.zeros(self.img.shape)
+        marker = np.zeros(self.img.shape, dtype=np.uint8)
         crop_img = self.img[self.corner[0]:self.corner[2], self.corner[1]:self.corner[3]]
         crop_mask = self.mask[self.corner[0]:self.corner[2], self.corner[1]:self.corner[3]]
         minima_img = np.zeros(crop_img.shape, dtype=np.uint8)
@@ -116,13 +117,13 @@ def compute_cells(img, radius=CELL_RADIUS, rho=RHO):
     return cells
 
 def get_glob_marker_center(cells):
-    glob_marker_center = np.zeros(cells[0].img.shape)
+    glob_marker_center = np.zeros(cells[0].img.shape, dtype=np.uint8)
     for i,cell in enumerate(cells):
         glob_marker_center[cell.get_center()] = 1
     return glob_marker_center
 
 def get_glob_marker_distinct(cells):
-    glob_marker_distinct = np.zeros(cells[0].img.shape)
+    glob_marker_distinct = np.zeros(cells[0].img.shape, dtype=np.uint8)
     for i,cell in enumerate(cells):
         glob_marker_distinct += cell.marker * (i+1)
     return glob_marker_distinct
@@ -214,7 +215,7 @@ waterpix_mask = compute_segmentation1D(labels)
 plt.imshow(waterpix_mask)
 plt.show()
 #%%
-def waterpixel(img, cell_rad, k, rho, marker_center=False):
+def waterpixel(img, cell_rad, k, rho, marker_center=False, only_mask=False):
     g_img = morphological_grad(img)
     cells = compute_cells(g_img, radius=cell_rad, rho=rho)
     glob_marker_distinct = get_glob_marker_distinct(cells)
@@ -227,11 +228,11 @@ def waterpixel(img, cell_rad, k, rho, marker_center=False):
 
     reg_g_img = compute_reg_grad(g_img*255, dist_map, k, cell_dist=CELL_RADIUS)
 
-    plt.imshow(reg_g_img)
-    plt.show()
-
     labels = skimage.segmentation.watershed(reg_g_img, glob_marker_distinct, watershed_line=True)
-    waterpix_img = compute_segmentation(img,labels)
+    if only_mask:
+        waterpix_img = compute_segmentation1D(labels)
+    else :
+        waterpix_img = compute_segmentation(img,labels)
     return waterpix_img
 
 # img_gray = cv2.cvtColor(np_img, cv2.COLOR_BGR2GRAY)
@@ -312,8 +313,51 @@ def MF(labels):
 result = MF(labels)
 print(result)
 
-
-
-
-
 # %%
+
+gt_file = scipy.io.loadmat('BSR/BSDS500/data/groundTruth/train/176035.mat')
+gt = np.array(gt_file['groundTruth'][0][0][0][0][1], dtype=np.float64)
+
+plt.imshow(gt)
+plt.show()
+
+def L1_distance_map(markers):
+    W,H = markers.shape
+    dist_map = np.zeros((W,H))
+
+    for i in range(W):
+        for j in range(H):
+            if markers[i,j] == 0:
+                dist_map[i,j] = np.inf
+
+    V_minus = [(-1,0),(0,-1),(0,0)]
+    V_plus = [(1,0),(0,1),(0,0)]
+    for i in range(1,W):
+        for j in range(1,H):
+            if markers[i,j] != 0:
+                continue
+            dist_map[i,j] = min([dist_map[i+elt[0],j+elt[1]] + 1 for elt in V_minus])
+    
+    for i in range(W-2,-2,-1):
+        for j in range(H-2,-2,-1):
+            if markers[i,j] != 0:
+                continue
+            dist_map[i,j] = min([dist_map[i+elt[0],j+elt[1]] + 1 for elt in V_plus])
+
+    return dist_map
+
+wat = waterpixel(np_img, 20, 25, 2/3, only_mask=True)
+plt.imshow(wat)
+plt.show()
+d_map = L1_distance_map(wat)
+plt.imshow(d_map)
+plt.show()
+#%%
+
+def BR(GT,wat_mask):
+    dist_map = L1_distance_map(wat_mask)
+    pos = np.where(GT == 1)
+    S = np.sum(dist_map[pos] < 3)
+    return S / np.sum(GT)
+
+print(BR(gt, wat))

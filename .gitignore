@@ -2,4 +2,6 @@
 *.jpg
 *.jpeg
 *.txt
+BSR/*
+BSDS/*
 test.py
