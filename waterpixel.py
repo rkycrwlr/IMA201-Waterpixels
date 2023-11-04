@@ -12,7 +12,7 @@ import math
 
 #%%
 
-img_path = 'BSR/BSDS500/data/images/train/176035.jpg'
+img_path = 'BSR/BSDS500/data/images/val/3096.jpg'
 im = Image.open(img_path)
 # im = im.resize((400,300))
 np_img = np.array(im)
@@ -40,7 +40,6 @@ plt.show()
 
 class Cell():
     def __init__(self,x,y,r,rho,img):
-        # Should be gradient image with uint8 values here
         if img.max() <= 1:
             img = (img*255).astype(np.uint8)
         self.img = img
@@ -106,24 +105,24 @@ plt.show()
 #%%
 
 def compute_cells(img, radius=CELL_RADIUS, rho=RHO):
-    W,H = img.shape
+    H,W = img.shape
     cells = []
     hex_wid = radius * np.sqrt(3)
     hex_hei = radius * 1.5
-    for i in range(int(W/hex_hei)+1):
-        for j in range(int(H/hex_wid)+1):
+    for i in range(int(H/hex_hei)+1):
+        for j in range(int(W/hex_wid)+1):
             center = (i*hex_hei, j*hex_wid) if i%2==0 else (i*hex_hei, j*hex_wid+hex_wid/2)
             cells.append(Cell(center[1], center[0], radius, rho, img))
     return cells
 
 def get_glob_marker_center(cells):
-    glob_marker_center = np.zeros(cells[0].img.shape, dtype=np.uint8)
+    glob_marker_center = np.zeros(cells[0].img.shape, dtype=np.uint16)
     for i,cell in enumerate(cells):
         glob_marker_center[cell.get_center()] = 1
     return glob_marker_center
 
 def get_glob_marker_distinct(cells):
-    glob_marker_distinct = np.zeros(cells[0].img.shape, dtype=np.uint8)
+    glob_marker_distinct = np.zeros(cells[0].img.shape, dtype=np.uint16)
     for i,cell in enumerate(cells):
         glob_marker_distinct += cell.marker * (i+1)
     return glob_marker_distinct
@@ -174,7 +173,7 @@ def DL_distance_map(markers):
 
     return dist_map[:,:,0]
 
-dist_map = DL_distance_map(glob_marker_center)
+dist_map = DL_distance_map(glob_marker_distinct)
 print((2/CELL_RADIUS*np.sqrt(dist_map)).max())
 plt.imshow(np.sqrt(dist_map))
 plt.show()
@@ -204,7 +203,7 @@ def compute_segmentation(img, labels):
     return np.where(waterpix_mask, waterpix_mask, img)
 
 def compute_segmentation1D( labels):
-    waterpix_mask = (labels == 0) * 255 
+    waterpix_mask = (labels == 0)
     waterpix_mask = waterpix_mask.astype(np.uint8)
     return waterpix_mask
 
@@ -215,7 +214,7 @@ waterpix_mask = compute_segmentation1D(labels)
 plt.imshow(waterpix_mask)
 plt.show()
 #%%
-def waterpixel(img, cell_rad, k, rho, marker_center=False, only_mask=False):
+def waterpixel(img, cell_rad, k, rho, marker_center=False, only_labels=False, only_mask=False):
     g_img = morphological_grad(img)
     cells = compute_cells(g_img, radius=cell_rad, rho=rho)
     glob_marker_distinct = get_glob_marker_distinct(cells)
@@ -229,6 +228,10 @@ def waterpixel(img, cell_rad, k, rho, marker_center=False, only_mask=False):
     reg_g_img = compute_reg_grad(g_img*255, dist_map, k, cell_dist=CELL_RADIUS)
 
     labels = skimage.segmentation.watershed(reg_g_img, glob_marker_distinct, watershed_line=True)
+    
+    if only_labels:
+        return labels
+    
     if only_mask:
         waterpix_img = compute_segmentation1D(labels)
     else :
@@ -236,15 +239,19 @@ def waterpixel(img, cell_rad, k, rho, marker_center=False, only_mask=False):
     return waterpix_img
 
 # img_gray = cv2.cvtColor(np_img, cv2.COLOR_BGR2GRAY)
-w_img = waterpixel(np_img, 20, 25, 2/3)
+w_img = waterpixel(np_img, 10, 8, 2/3)
 plt.imshow(w_img)
+plt.show()
+
+labels = waterpixel(np_img, 10, 8, 2/3, only_labels=True)
+plt.imshow(labels)
 plt.show()
 # %%
 
-def contourDensity(waterpix):
-    w,h=waterpix.shape()
+def contourDensity(border):
+    w,h=border.shape[:2]
     sb = 2*(w+h)-4
-    sc = waterpix.sum()
+    sc = border.sum()
     d = w*h
     return (sc+sb)/d
 
@@ -262,13 +269,13 @@ def barycenters(labels):
 
 def average_superpix(labels, barys):
     w,h = labels.shape
-    avg = np.zeros((w,h))
+    avg = np.zeros((2*w,2*h))
     indiceMax = labels.max()
     
     for idx in range(1,indiceMax+1):
         x,y = np.where(labels==idx)
-        coordsX = x - barys[idx-1][0] + w//2
-        coordsY = y - barys[idx-1][1] + h//2
+        coordsX = x - barys[idx-1][0] + w
+        coordsY = y - barys[idx-1][1] + h
         for i in range(len(x)):
             avg[coordsX[i],coordsY[i]] += 1
     avg = avg/indiceMax
@@ -283,10 +290,11 @@ plt.show()
 
 # %%
 def centered_label(i, barys, labels):
-    result = np.zeros(labels.shape)
+    w,h = labels.shape
+    result = np.zeros((2*w,2*h))
     x,y = np.where(labels==i)
     for j in range(len(x)):
-        result[x[j]-barys[i-1][0]+labels.shape[0]//2,y[j]-barys[i-1][1]+labels.shape[1]//2] = 1
+        result[x[j]-barys[i-1][0]+w,y[j]-barys[i-1][1]+h] = 1
     return result
 
 
@@ -302,7 +310,9 @@ print(result)
 
 # %%
 
-def MF(labels):
+def missmatchFactor(labels):
+    barys = barycenters(labels)
+    avg = average_superpix(labels, barys)
     N = labels.max()
     S = 0
     for i in range(N):
@@ -310,12 +320,12 @@ def MF(labels):
     return S/N
 
 
-result = MF(labels)
+result = missmatchFactor(labels)
 print(result)
 
 # %%
 
-gt_file = scipy.io.loadmat('BSR/BSDS500/data/groundTruth/train/176035.mat')
+gt_file = scipy.io.loadmat('BSR/BSDS500/data/groundTruth/val/3096.mat')
 gt = np.array(gt_file['groundTruth'][0][0][0][0][1], dtype=np.float64)
 
 plt.imshow(gt)
@@ -354,10 +364,155 @@ plt.imshow(d_map)
 plt.show()
 #%%
 
-def BR(GT,wat_mask):
+def boundaryRecall(GT,wat_mask):
     dist_map = L1_distance_map(wat_mask)
     pos = np.where(GT == 1)
     S = np.sum(dist_map[pos] < 3)
     return S / np.sum(GT)
 
-print(BR(gt, wat))
+print(boundaryRecall(gt, wat))
+
+#%%
+
+def get_n_seg(rad,width,height):
+    return int((width / (rad * np.sqrt(3))) * (height / (rad * 1.5)))
+
+folder = 'BSR/BSDS500/data/'
+images = sorted([folder + 'images/val/' + elt for elt in os.listdir(folder + 'images/val/')])
+gt_names = sorted([folder + 'groundTruth/val/' + elt for elt in os.listdir(folder + 'groundTruth/val')])
+
+print(len(images))
+
+img = np.array(Image.open(images[0]))
+h,w = img.shape[:2]
+
+slic_labels = skimage.segmentation.slic(img, n_segments=get_n_seg(20,w,h))
+slic_bounds = skimage.segmentation.find_boundaries(slic_labels)
+wat_labels = w_img = waterpixel(img, 20, 8, 2/3, only_labels=True)
+
+plt.imshow(img)
+plt.show()
+
+plt.imshow(slic_labels)
+plt.title(str(slic_labels.max()))
+plt.show()
+
+plt.imshow(wat_labels)
+plt.title(str(wat_labels.max()))
+plt.show()
+
+#%%
+import pickle
+import tqdm
+
+N_img = 20
+
+k_values = [0,4,8,16]
+rad_values = [10,20,30,40]
+
+all_wat_results = np.zeros((4,4,3))
+all_slic_results = np.zeros((4,3))
+
+for img_name, gt_name in tqdm.tqdm(zip(images[:N_img],gt_names[:N_img])):
+    print(img_name)
+    img = np.array(Image.open(img_name))
+    h,w = img.shape[:2]
+    gt_file = scipy.io.loadmat(gt_name)
+    gt = np.array(gt_file['groundTruth'][0][0][0][0][1], dtype=np.float64)
+
+    for i, rad in enumerate(rad_values):
+        for j, k in enumerate(k_values):
+            wat_labels = waterpixel(img, rad, k, 2/3, only_labels=True)
+            wat_border = compute_segmentation1D(wat_labels)
+            CD = contourDensity(wat_border)
+            MF = missmatchFactor(wat_labels)
+            BR = boundaryRecall(gt,wat_border)
+            all_wat_results[i,j] += np.array([CD,MF,BR])
+        
+        slic_labels = skimage.segmentation.slic(img, n_segments=get_n_seg(rad,w,h))
+        slic_bounds = skimage.segmentation.find_boundaries(slic_labels)
+        CD = contourDensity(slic_bounds)
+        MF = missmatchFactor(slic_labels)
+        BR = boundaryRecall(gt,slic_bounds)
+        all_slic_results[i] += np.array([CD,MF,BR])
+
+results = {'wat': all_wat_results / N_img, 'slic': all_slic_results / N_img}
+with open('results.pkl', 'wb') as f:
+    pickle.dump(results, f)
+
+#%%
+
+with open('results.pkl', 'rb') as f:
+    res = pickle.load(f)
+    res_wat = res['wat']
+    res_slic = res['slic']
+
+#%%
+
+wat_k0_BR = res_wat[:,0,2]
+wat_k8_BR = res_wat[:,2,2]
+wat_k16_BR = res_wat[:,3,2]
+slic_BR = res_slic[:,2]
+wat_k0_CD = res_wat[:,0,0]
+wat_k8_CD = res_wat[:,2,0]
+wat_k16_CD = res_wat[:,3,0]
+slic_CD = res_slic[:,0]
+wat_k0_MF = res_wat[:,0,1]
+wat_k8_MF = res_wat[:,2,1]
+wat_k16_MF = res_wat[:,3,1]
+slic_MF = res_slic[:,1]
+
+plt.plot(wat_k0_BR, wat_k0_CD, label="Waterpixel K=0")
+plt.plot(wat_k8_BR, wat_k8_CD, label="Waterpixel K=8")
+plt.plot(wat_k16_BR, wat_k16_CD, label="Waterpixel K=16")
+plt.plot(slic_BR, slic_CD, label="Slic")
+
+plt.title("Contour_Density_vs_Boundary_Recall")
+plt.xlabel("Boundary recall")
+plt.ylabel("Contour Density")
+plt.legend()
+plt.show()
+
+plt.plot(rad_values, wat_k0_CD, label="Waterpixel K=0")
+plt.plot(rad_values, wat_k8_CD, label="Waterpixel K=8")
+plt.plot(rad_values, wat_k16_CD, label="Waterpixel K=16")
+plt.plot(rad_values, slic_CD, label="Slic")
+
+plt.title("Contour_Density_vs_Superpixel_Size")
+plt.xlabel("Superpixel Size")
+plt.ylabel("Contour Density")
+plt.legend()
+plt.show()
+
+plt.plot(rad_values, wat_k0_MF, label="Waterpixel K=0")
+plt.plot(rad_values, wat_k8_MF, label="Waterpixel K=8")
+plt.plot(rad_values, wat_k16_MF, label="Waterpixel K=16")
+plt.plot(rad_values, slic_MF, label="Slic")
+
+plt.title("Mismatch_Factor_vs_Superpixel_Size")
+plt.xlabel("Superpixel Size")
+plt.ylabel("Mismatch Factor")
+plt.legend()
+plt.show()
+
+plt.plot(rad_values, wat_k0_BR, label="Waterpixel K=0")
+plt.plot(rad_values, wat_k8_BR, label="Waterpixel K=8")
+plt.plot(rad_values, wat_k16_BR, label="Waterpixel K=16")
+plt.plot(rad_values, slic_BR, label="Slic")
+
+plt.title("Boundary_Recall_vs_Superpixel_Size")
+plt.xlabel("Superpixel Size")
+plt.ylabel("Boundary Recall")
+plt.legend()
+plt.show()
+
+plt.plot(wat_k0_BR, wat_k0_MF, label="Waterpixel K=0")
+plt.plot(wat_k8_BR, wat_k8_MF, label="Waterpixel K=8")
+plt.plot(wat_k16_BR, wat_k16_MF, label="Waterpixel K=16")
+plt.plot(slic_BR, slic_MF, label="Slic")
+
+plt.title("Mismatch_Factor_vs_Boundary_Recall")
+plt.xlabel("Boundary recall")
+plt.ylabel("Mismatch Factor")
+plt.legend()
+plt.show()
