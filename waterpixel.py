@@ -4,10 +4,12 @@ import scipy
 from scipy import ndimage
 import skimage
 import matplotlib.pyplot as plt
-from PIL import Image, ImageOps, ImageDraw
+from PIL import Image, ImageDraw
 import os
 import cv2
 import math
+import pickle
+import tqdm
 
 
 #%%
@@ -26,7 +28,7 @@ print(np_img.shape)
 
 def morphological_grad(img, k_val=3, gauss_sigma=2):
     if img.ndim >= 3:
-        img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)[:,:,0]
     img = ndimage.gaussian_filter(img,gauss_sigma)
     grad = cv2.morphologyEx(img, cv2.MORPH_GRADIENT, np.ones((k_val, k_val)))
     grad = grad / grad.max()
@@ -34,6 +36,7 @@ def morphological_grad(img, k_val=3, gauss_sigma=2):
 
 #%%
 g_img = np.array(morphological_grad(np_img))
+print(g_img.shape)
 plt.imshow(g_img, cmap='gray')
 plt.show()
 #%%
@@ -202,7 +205,7 @@ def compute_segmentation(img, labels):
     waterpix_mask = skimage.morphology.dilation(waterpix_mask)
     return np.where(waterpix_mask, waterpix_mask, img)
 
-def compute_segmentation1D( labels):
+def compute_segmentation_only_mask(labels):
     waterpix_mask = (labels == 0)
     waterpix_mask = waterpix_mask.astype(np.uint8)
     return waterpix_mask
@@ -210,7 +213,7 @@ def compute_segmentation1D( labels):
 img_gray = cv2.cvtColor(np_img, cv2.COLOR_BGR2GRAY)
 plt.imshow(compute_segmentation(img_gray, labels), cmap='gray')
 plt.show()
-waterpix_mask = compute_segmentation1D(labels)
+waterpix_mask = compute_segmentation_only_mask(labels)
 plt.imshow(waterpix_mask)
 plt.show()
 #%%
@@ -233,7 +236,7 @@ def waterpixel(img, cell_rad, k, rho, marker_center=False, only_labels=False, on
         return labels
     
     if only_mask:
-        waterpix_img = compute_segmentation1D(labels)
+        waterpix_img = compute_segmentation_only_mask(labels)
     else :
         waterpix_img = compute_segmentation(img,labels)
     return waterpix_img
@@ -402,8 +405,7 @@ plt.title(str(wat_labels.max()))
 plt.show()
 
 #%%
-import pickle
-import tqdm
+
 
 N_img = 20
 
@@ -423,7 +425,7 @@ for img_name, gt_name in tqdm.tqdm(zip(images[:N_img],gt_names[:N_img])):
     for i, rad in enumerate(rad_values):
         for j, k in enumerate(k_values):
             wat_labels = waterpixel(img, rad, k, 2/3, only_labels=True)
-            wat_border = compute_segmentation1D(wat_labels)
+            wat_border = compute_segmentation_only_mask(wat_labels)
             CD = contourDensity(wat_border)
             MF = missmatchFactor(wat_labels)
             BR = boundaryRecall(gt,wat_border)
